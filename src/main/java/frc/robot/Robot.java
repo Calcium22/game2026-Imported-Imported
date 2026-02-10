@@ -39,9 +39,18 @@ public class Robot extends TimedRobot {
   private final RelativeEncoder m_shooterEncoder = m_shooterMotor.getEncoder();
 
   public static int positionIndex = 1;
-  public static double position[] = {2000, 3900, 5000, 6000};
+  public static double position[] = {2000, 3900, 5000, 6000}; // Preset shooter RPMs for different positions, array starts at 0 index
   public static double kShooterRPM = position[positionIndex]; // Target shooter RPM
-
+   public static int positionIndexPID = 1;
+  public static double positionP[] = {1, 2, 3, 4}; // these are example values for PID tuning change them for actual
+  public static double positionI[] = {1, 2, 3, 4};
+  public static double positionD[] = {1, 2, 3, 4};
+  public static double positionVelocity[] = {1, 2, 3, 4};
+  public static double P = positionP[positionIndexPID];
+  public static double I = positionI[positionIndexPID];
+  public static double D = positionD[positionIndexPID];
+  public static double Velocity = positionVelocity[positionIndexPID];
+ 
   @SuppressWarnings("removal")
   public Robot() {
     // 1. Configure Drivetrain
