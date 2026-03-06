@@ -176,37 +176,6 @@ public class Robot extends TimedRobot {
   @Override
   public void teleopPeriodic() {
 
-    
-  // photonvision code
-  PhotonPipelineResult result = Tag.getLatestResult();
-  if (result.hasTargets()) {
-    List<PhotonTrackedTarget> targets = result.getTargets();
-    double yaw = targets.get(0).getYaw();
-    double pitch = targets.get(0).getPitch();
-    double area = targets.get(0).getArea();
-    double skew = targets.get(0).getSkew();
-
-    int targetID = targets.get(0).getFiducialId();
-    double poseAmbiguity = targets.get(0).getPoseAmbiguity();
-    Transform3d bestCameraToTarget = targets.get(0).getBestCameraToTarget();
-    Transform3d alternateCameraToTarget = targets.get(0).getAlternateCameraToTarget();
-
-    if (poseAmbiguity < 0.2) {
-      System.out.println("Target ID: " + targetID);
-      System.out.println("Yaw: " + yaw);
-      System.out.println("Pitch: " + pitch);
-      System.out.println("Area: " + area);
-      System.out.println("Skew: " + skew);
-      System.out.println("Best Camera To Target: " + bestCameraToTarget);
-    } else {
-      System.out.println("Target ID: " + targetID);
-      System.out.println("Pose Ambiguity: " + poseAmbiguity);
-      System.out.println("Best Camera To Target: " + bestCameraToTarget);
-      System.out.println("Alternate Camera To Target: " + alternateCameraToTarget);
-    }
-  } else {
-    System.out.println("No targets detected.");
-  }
     // --- Drive ---
     m_robotDrive.arcadeDrive(-m_p1Controller.getLeftY() * -1 * wheel_maxspeed,
         -m_p1Controller.getRightX() * -1 * wheel_maxspeed);
@@ -214,7 +183,7 @@ public class Robot extends TimedRobot {
     // callabration mode for shooter and intake
 
     if (m_p1Controller.getStartButtonPressed()) {
-      callabrationMode = (callabrationMode + 1) % 6; // cycle through modes
+      callabrationMode = (callabrationMode + 1) % 4; // cycle through modes
       if (callabrationMode > 5) {
         callabrationMode = 0; // reset to normal mode after hopper calibration
       }
@@ -235,9 +204,6 @@ public class Robot extends TimedRobot {
       }
       if (callabrationMode == 4) {
         System.out.println("hopper callabration");
-      }
-      if (callabrationMode == 5) {
-        System.out.println("camera callabration");
       }
     }
     if (callabrationMode == 1) {
@@ -275,10 +241,6 @@ public class Robot extends TimedRobot {
         System.out.println("Pusher RPM: " + kPusherRPM);
         System.out.println("Actual Pusher Velocity+: " + m_pusherEncoder.getVelocity());
       }
-      if (m_p1Controller.getLeftStickButton()) {
-        wheel_maxspeed = 0;
-        intakeRPM = 0;
-      }
     } else if (callabrationMode == 4) {
       if (m_p1Controller.getLeftBumperButtonReleased()) {
         hopper_retract -= 0.01;
@@ -290,20 +252,8 @@ public class Robot extends TimedRobot {
         System.out.println("Hopper Retract Position: " + hopper_retract);
         System.out.println("Actual Hopper Position+: " + m_hopperEncoder.getPosition());
       }
-      if (m_p1Controller.getLeftStickButton()) {
-        wheel_maxspeed = 0;
-        intakeRPM = 0;
-      }
-
-    } else if (callabrationMode == 5) {
-      if (m_p1Controller.getLeftBumperButtonReleased()) {
-        // Capture pre-process camera stream image
-        Tag.takeInputSnapshot();
-
-        // Capture post-process camera stream image
-        Tag.takeOutputSnapshot();
-      }
     }
+
     // Player 1 controls shooting, inake, and no climbing controls yet
     // --- Cycle shooter preset ---
     if (m_p1Controller.getBackButtonPressed()) {
@@ -320,10 +270,10 @@ public class Robot extends TimedRobot {
     } else if (m_p1Controller.getXButton()) {
       m_intakePID.setSetpoint(intakeRPM * -1, ControlType.kVelocity); // pickup
       m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kPusherRPM * -1, ControlType.kVelocity);
 
     } else if (m_p1Controller.getAButton()) {
-      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
+      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
       m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
     } else if (m_p1Controller.getBButton()) {
       m_intakePID.setSetpoint(intakeRPM * -1, ControlType.kVelocity); // unjam
