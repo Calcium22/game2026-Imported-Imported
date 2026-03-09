@@ -4,12 +4,25 @@
 
 package frc.robot.subsystems;
 
+import com.pathplanner.lib.auto.AutoBuilder;
+
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
-public class ExampleSubsystem extends SubsystemBase {
+public class ExampleSubsystem<autoChooser> extends SubsystemBase {
   /** Creates a new ExampleSubsystem. */
-  public ExampleSubsystem() {}
+  public void DriveSubsystem(){
+    // Do all subsystem initialization here
+    // ...
+
+    // Configure the AutoBuilder last
+   
+    
+}
+
 
   /**
    * Example command factory method.
@@ -24,6 +37,23 @@ public class ExampleSubsystem extends SubsystemBase {
           /* one-time action goes here */
         });
   }
+  private SendableChooser<Command> autoChooser = new SendableChooser<>();
+
+public void RobotContainer() {
+    // ... other init + AutoBuilder configuration
+
+    // Build an auto chooser. This will use Commands.none() as the default option.
+    autoChooser = AutoBuilder.buildAutoChooser();
+
+    // Another option that allows you to specify the default auto by its name
+    // autoChooser = AutoBuilder.buildAutoChooser("My Default Auto");
+
+    SmartDashboard.putData("Auto Chooser", autoChooser);
+}
+
+public Command getAutonomousCommand() {
+    return autoChooser.getSelected();
+}
 
   /**
    * An example method querying a boolean state of the subsystem (for example, a digital sensor).
@@ -44,4 +74,6 @@ public class ExampleSubsystem extends SubsystemBase {
   public void simulationPeriodic() {
     // This method will be called once per scheduler run during simulation
   }
+
 }
+
