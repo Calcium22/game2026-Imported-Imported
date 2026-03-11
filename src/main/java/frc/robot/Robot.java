@@ -60,19 +60,22 @@ public class Robot extends TimedRobot {
   public static double top_load_increment = 100; // RPM increment for calibration
   public static double hopper_increment = 5; // degree increment for hopper calibration
 
-  public static double shooter_maxspeed = 0.1; // used for testing,
-  public static double intake_maxspeed = 0.1; // used for testing,
-  public static double wheel_maxspeed = 0.5;
+  public static double shooter_factor = 0.1; // used for testing,
+  public static double intake_factor = 0.1; // used for testing,
+  public static double wheel_factor = 0.5;
   // hopper position variables, hopper is in degrees.
 
   double hopper_extend = -0;
   double hopper_retract = 0;
+
+  // climber variables
+  double inchesPerMotorRotation = 0.3927; // (inch diameter * Math.PI) / 16
+
   // Drivetrain Motors
   private final SparkMax m_leftLeader = new SparkMax(1, MotorType.kBrushed);
   private final SparkMax m_leftFollower = new SparkMax(2, MotorType.kBrushed);
   private final SparkMax m_rightLeader = new SparkMax(3, MotorType.kBrushed);
   private final SparkMax m_rightFollower = new SparkMax(4, MotorType.kBrushed);
-
   // Use the leaders directly for DifferentialDrive
   private final DifferentialDrive m_robotDrive = new DifferentialDrive(m_leftLeader, m_rightLeader);
 
@@ -80,22 +83,29 @@ public class Robot extends TimedRobot {
   private final XboxController m_p2Controller = new XboxController(1);
   private final Timer m_timer = new Timer();
 
+  private final SparkMax m_intakemotor = new SparkMax(5, MotorType.kBrushless);
+  private final SparkClosedLoopController m_intakePID = m_intakemotor.getClosedLoopController();
+  private final RelativeEncoder m_intakeEncoder = m_intakemotor.getEncoder();
   // Turret & Shooter & hopper motors
   private final SparkMax m_hopperMotor = new SparkMax(6, MotorType.kBrushless);
   private final SparkClosedLoopController m_hopperPID = m_hopperMotor.getClosedLoopController();
   SparkAbsoluteEncoder hopperEncoder = m_hopperMotor.getAbsoluteEncoder();
 
-  private final SparkMax m_intakemotor = new SparkMax(5, MotorType.kBrushless);
-  private final SparkClosedLoopController m_intakePID = m_intakemotor.getClosedLoopController();
-  private final RelativeEncoder m_intakeEncoder = m_intakemotor.getEncoder();
+  private final SparkFlex m_shooterMotor = new SparkFlex(7, MotorType.kBrushless);
+  private final SparkClosedLoopController m_shooterPID = m_shooterMotor.getClosedLoopController();
+  private final RelativeEncoder m_shooterEncoder = m_shooterMotor.getEncoder();
 
   private final SparkFlex m_pusher = new SparkFlex(8, MotorType.kBrushless);
   private final SparkClosedLoopController m_pusherPID = m_pusher.getClosedLoopController();
   private final RelativeEncoder m_pusherEncoder = m_pusher.getEncoder();
 
-  private final SparkFlex m_shooterMotor = new SparkFlex(7, MotorType.kBrushless);
-  private final SparkClosedLoopController m_shooterPID = m_shooterMotor.getClosedLoopController();
-  private final RelativeEncoder m_shooterEncoder = m_shooterMotor.getEncoder();
+  private final SparkMax m_winch_left = new SparkMax(9, MotorType.kBrushless);
+  private final SparkClosedLoopController m_winch_leftPID = m_winch_left.getClosedLoopController();
+  private final RelativeEncoder m_winch_leftEncoder = m_winch_left.getEncoder();
+
+  private final SparkMax m_winch_right = new SparkMax(10, MotorType.kBrushless);
+  private final SparkClosedLoopController m_winch_rightPID = m_winch_right.getClosedLoopController();
+  private final RelativeEncoder m_winch_rightEncoder = m_winch_right.getEncoder();
 
   double currentIntakeVelocity = m_intakeEncoder.getVelocity();
   double currentIntakeCurrent = m_intakemotor.getOutputCurrent();
@@ -107,7 +117,8 @@ public class Robot extends TimedRobot {
   private final Timer m_stallTimer = new Timer();
   private final double kStallTimeLimit = 0.5; // seconds to wait before reversing
 
-  int callabrationMode = 0; // 0 = normal, 1 = shooter calibration, 2 = intake calibration
+  int callabrationMode = 0; // 0 = normal, 1 = shooter calibration, 2 = intake calibration, 3 = top load
+                            // calibration, 4 = pusher calibration, 5 = hopper calibration
 
   @SuppressWarnings("removal")
   public Robot() {
@@ -152,6 +163,33 @@ public class Robot extends TimedRobot {
     intakeConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
         .p(0.00025).i(0).d(0).outputRange(-1.0, 1.0);
     m_intakemotor.configure(intakeConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
+    // climber config, same for left and right except for motor ID
+
+    SparkMaxConfig winchleft_Config = new SparkMaxConfig();
+    winchleft_Config.smartCurrentLimit(30);
+    winchleft_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+        .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
+    winchleft_Config.encoder
+        .positionConversionFactor(inchesPerMotorRotation);
+    winchleft_Config.closedLoop.maxMotion
+        .cruiseVelocity(400) // Replaces maxVelocity
+        .maxAcceleration(200) // Replaces maxAcceleration
+        .allowedClosedLoopError(1);
+    m_winch_left.configure(winchleft_Config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    SparkMaxConfig winchright_Config = new SparkMaxConfig();
+    winchright_Config.smartCurrentLimit(30);
+    winchright_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+        .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
+    winchright_Config.encoder
+        .positionConversionFactor(inchesPerMotorRotation);
+    winchright_Config.closedLoop.maxMotion
+        .cruiseVelocity(400)
+        .maxAcceleration(200)
+        .allowedClosedLoopError(1);
+    m_winch_right.configure(winchright_Config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    // Configure closed-loop motion parameters for both winch configs
+
   }
 
   @Override
@@ -172,8 +210,8 @@ public class Robot extends TimedRobot {
   public void teleopPeriodic() {
 
     // --- Drive ---
-    m_robotDrive.arcadeDrive(-m_p2Controller.getLeftY() * -1 * wheel_maxspeed,
-        -m_p2Controller.getRightX() * -1 * wheel_maxspeed);
+    m_robotDrive.arcadeDrive(-m_p2Controller.getLeftY() * -1 * wheel_factor,
+        -m_p2Controller.getRightX() * -1 * wheel_factor);
 
     // callabration mode for shooter and intake
 
@@ -184,9 +222,9 @@ public class Robot extends TimedRobot {
       }
       if (callabrationMode == 0) {
         System.out.println("Normal Mode");
-        wheel_maxspeed = 0.8;
-        shooter_maxspeed = 1;
-        intake_maxspeed = 1;
+        wheel_factor = 0.8;
+        shooter_factor = 1;
+        intake_factor = 1;
       }
       if (callabrationMode == 1) {
         System.out.println("Shooter Calibration Mode");
@@ -270,70 +308,82 @@ public class Robot extends TimedRobot {
       kShooterRPM = shooterposition[positionIndex];
       kIntakeRPM = intakeposition[positionIndex];
       kPusherRPM = pusherposition[positionIndex];
+    }
+    // shootor and intake button logic
+    if (m_p1Controller.getYButton()) {
+      m_intakePID.setSetpoint(kIntakeRPM, ControlType.kVelocity); // shooting
+      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
 
-      // shootor and intake button logic
-      if (m_p1Controller.getYButton()) {
-        m_intakePID.setSetpoint(kIntakeRPM, ControlType.kVelocity); // shooting
-        m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-        m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+    } else if (m_p1Controller.getXButton()) {
+      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // pickup
+      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
 
-      } else if (m_p1Controller.getXButton()) {
-        m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // pickup
-        m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-        m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+    } else if (m_p1Controller.getAButton()) {
+      m_shooterPID.setSetpoint(kTopLoadRPM, ControlType.kVelocity);// top load into hopper
+      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
 
-      } else if (m_p1Controller.getAButton()) {
-        m_shooterPID.setSetpoint(kTopLoadRPM, ControlType.kVelocity);// top load into hopper
-        m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
-      } else if (m_p1Controller.getBButton()) {
-        m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // unjam
-        m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
-        m_pusherPID.setSetpoint(kPusherRPM * -1, ControlType.kVelocity);
+    } else if (m_p1Controller.getBButton()) {
+      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // unjam
+      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kPusherRPM * -1, ControlType.kVelocity);
+    } else {
+      m_intakemotor.stopMotor();// causes it to coast instead of brake, which is better for the shooter and
+                                // intake
+      m_shooterMotor.stopMotor();
+      m_pusher.stopMotor();
+      m_hopperMotor.stopMotor();
+    }
+    // climber below
+    // Distance = Rotations × (Spool Diameter × π) / Gear Ratio
+    // CALCULATION: (Circumference / Gear Ratio)
+    // (2.0 * Math.PI) / 16 = 0.3927
+    // our diamiter is .7500 inches
+    // circumfrence 2.36 inches
+    if (m_p1Controller.getLeftTriggerAxis() > 0.1) {
+      m_winch_leftPID.setReference(30, ControlType.kMAXMotionPositionControl);
+      m_winch_rightPID.setReference(30, ControlType.kMAXMotionPositionControl);
+    } else if (m_p1Controller.getRightTriggerAxis() > 0.1) {
+      m_winch_leftPID.setReference(0, ControlType.kMAXMotionPositionControl);
+      m_winch_rightPID.setReference(0, ControlType.kMAXMotionPositionControl);
+    }
 
-      } else {
-        m_intakemotor.stopMotor();// causes it to coast instead of brake, which is better for the shooter and
-                                  // intake
-        m_shooterMotor.stopMotor();
-        m_pusher.stopMotor();
-        m_hopperMotor.stopMotor();
-      }
+    int pov = m_p1Controller.getPOV();// hopper in degrees
+    if (pov >= 280 || pov <= 80) {
+      m_hopperPID.setSetpoint(hopper_retract, ControlType.kPosition);
+    } else if (pov >= 100 && pov <= 260) {
+      m_hopperPID.setSetpoint(hopper_extend, ControlType.kPosition);
+    }
 
-      int pov = m_p1Controller.getPOV();// hopper in degrees
-      if (pov >= 280 || pov <= 80) {
-        m_hopperPID.setSetpoint(hopper_retract, ControlType.kPosition);
-      } else if (pov >= 100 && pov <= 260) {
-        m_hopperPID.setSetpoint(hopper_extend, ControlType.kPosition);
-      }
-
-      // System.out.println("Shooter RPM: " + m_shooterEncoder.getVelocity());
-      // stall detection (sample current values each loop)
-      double currentIntakeVelocity = m_intakeEncoder.getVelocity();
-      double currentIntakeCurrent = m_intakemotor.getOutputCurrent();
-      if (Math.abs(m_intakemotor.getAppliedOutput()) > kMinPower) {
-        if (Math.abs(currentIntakeVelocity) < kStallVelocity && currentIntakeCurrent > kStallCurrent) {
-          // Start the timer if it's not running
-          if (m_stallTimer.get() == 0) {
-            m_stallTimer.start();
-          }
-          // If we've exceeded the time limit, take action
-          if (m_stallTimer.get() > kStallTimeLimit) {
-            System.out.println("INTAKE STALLED! Reversing.");
-            m_intakemotor.set(-0.5); // reverse
-          }
-        } else {
-          // Not stalling: Reset the timer
-          m_stallTimer.stop();
-          m_stallTimer.reset();
+    // System.out.println("Shooter RPM: " + m_shooterEncoder.getVelocity());
+    // stall detection (sample current values each loop)
+    double currentIntakeVelocity = m_intakeEncoder.getVelocity();
+    double currentIntakeCurrent = m_intakemotor.getOutputCurrent();
+    if (Math.abs(m_intakemotor.getAppliedOutput()) > kMinPower) {
+      if (Math.abs(currentIntakeVelocity) < kStallVelocity && currentIntakeCurrent > kStallCurrent) {
+        // Start the timer if it's not running
+        if (m_stallTimer.get() == 0) {
+          m_stallTimer.start();
+        }
+        // If we've exceeded the time limit, take action
+        if (m_stallTimer.get() > kStallTimeLimit) {
+          System.out.println("INTAKE STALLED! Reversing.");
+          m_intakemotor.set(-0.5); // reverse
         }
       } else {
-        // Not running: Reset the timer
+        // Not stalling: Reset the timer
         m_stallTimer.stop();
         m_stallTimer.reset();
       }
-      if (m_stallTimer.hasElapsed(0.5)) {
-        System.out.println("INTAKE STALLED FOR 0.5 SECONDS!");
-        m_intakemotor.set(-0.5);
-      }
+    } else {
+      // Not running: Reset the timer
+      m_stallTimer.stop();
+      m_stallTimer.reset();
+    }
+    if (m_stallTimer.hasElapsed(0.5)) {
+      System.out.println("INTAKE STALLED FOR 0.5 SECONDS!");
+      m_intakemotor.set(-0.5);
     }
   } // end teleopPeriodic()
 
