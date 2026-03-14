@@ -8,6 +8,7 @@ import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.livewindow.LiveWindow;
 
 //revrobotics imports
+import edu.wpi.first.wpilibj.DutyCycleEncoder;
 import com.revrobotics.spark.SparkMax;
 import com.revrobotics.spark.SparkFlex;
 import com.revrobotics.spark.SparkBase.ResetMode;
@@ -20,13 +21,14 @@ import com.revrobotics.spark.SparkClosedLoopController;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.SparkAbsoluteEncoder;
+//banebots 48:1  2 inch usable saft
 
 //Controller Mapping
-//Y: Intake/Pickup
+//Y: pusher/Pickup
 //X: Shooter
-//B: Reverse intake/shooter (unjam)
+//B: Reverse pusher/shooter (unjam)
 //A: Unload fuel
-//Analog sticks: Steeringzz
+//Analog sticks: Steering
 //D-Pad: Hopper control
 //Start:Enter callibrate
 //Mode: Unusable
@@ -34,11 +36,11 @@ import com.revrobotics.spark.SparkAbsoluteEncoder;
 //Left Bumper: 
 //  -Normal Cal: Makes variables the same
 //  -Shooter Cal:
-//  -Intake Cal:
+//  -pusher Cal:
 //Right Rumper: 
 //  -Normal Cal: Makes variables the same
 //  -Shooter Cal:
-//  -Intake Cal:
+//  -pusher Cal:
 
 //Left Trigger: Unused
 //Right Trigger:Unused
@@ -46,28 +48,31 @@ import com.revrobotics.spark.SparkAbsoluteEncoder;
 public class Robot extends TimedRobot {
   public static int positionIndex = 0;
   public static double shooterposition[] = { 5600, 5800, 6000, 6500 }; // Preset shooter RPMs
-  public static double intakeposition[] = { 5600, 5800, 6000, 6500 }; // Preset shooter RPMs
-  public static double pusherposition[] = { 2000, 5600, 5000, 6000 }; // Preset shooter RPMs
+  public static double pusherposition[] = { 5600, 5800, 6000, 6500 }; // Preset shooter RPMs
+  public static double intakeposition[] = { 4000, 5600, 5000, 6000 }; // Preset shooter RPMs
   public static double top_load[] = { 2000, 2000, 2000, 2000 }; // Preset loading RPMs for loading with shooter
   public static double kShooterRPM = shooterposition[positionIndex]; // Target shooter RPM
-  public static double kIntakeRPM = intakeposition[positionIndex]; // Target shooter RPM
-  public static double kPusherRPM = pusherposition[positionIndex]; // Target pusher RPM
+  public static double kpusherRPM = pusherposition[positionIndex]; // Target shooter RPM
+  public static double kintakeRPM = intakeposition[positionIndex]; // Target intake RPM
   public static double kTopLoadRPM = top_load[positionIndex]; // Target top load RPM
 
   public static double shooter_increment = 100; // RPM increment for calibration
-  public static double intake_increment = 100; // RPM increment for calibration
   public static double pusher_increment = 100; // RPM increment for calibration
+  public static double intake_increment = 100; // RPM increment for calibration
   public static double top_load_increment = 100; // RPM increment for calibration
   public static double hopper_increment = 5; // degree increment for hopper calibration
 
   public static double shooter_factor = 0.1; // used for testing,
-  public static double intake_factor = 0.1; // used for testing,
+  public static double pusher_factor = 0.1; // used for testing,
   public static double wheel_factor = 0.5;
-  // hopper position variables, hopper is in degrees.
+  // hopper position variables, hopper is in degrees
+  double hopperRetract = 115; // in degrees
+  double hopperExtend = 58; // in degrees
+  double hopperTarget = hopperRetract; // initialization to valid value of retracted
 
-  double hopper_extend = -0;
-  double hopper_retract = 0;
-
+  // Simple proportional speed
+  double kSpeed = 0.5; // base speed
+  double output = 0;
   // climber variables
   double inchesPerMotorRotation = 0.3927; // (inch diameter * Math.PI) / 16
 
@@ -83,21 +88,22 @@ public class Robot extends TimedRobot {
   private final XboxController m_p2Controller = new XboxController(1);
   private final Timer m_timer = new Timer();
 
-  private final SparkMax m_intakemotor = new SparkMax(5, MotorType.kBrushless);
-  private final SparkClosedLoopController m_intakePID = m_intakemotor.getClosedLoopController();
-  private final RelativeEncoder m_intakeEncoder = m_intakemotor.getEncoder();
+  private final SparkMax m_pushermotor = new SparkMax(5, MotorType.kBrushless);
+  private final SparkClosedLoopController m_pusherPID = m_pushermotor.getClosedLoopController();
+  private final RelativeEncoder m_pusherEncoder = m_pushermotor.getEncoder();
   // Turret & Shooter & hopper motors
-  private final SparkMax m_hopperMotor = new SparkMax(6, MotorType.kBrushless);
+  private final SparkMax m_hopperMotor = new SparkMax(6, MotorType.kBrushed);
   private final SparkClosedLoopController m_hopperPID = m_hopperMotor.getClosedLoopController();
-  SparkAbsoluteEncoder hopperEncoder = m_hopperMotor.getAbsoluteEncoder();
+  // Assuming the White wire pigtail is in DIO Port 0
+  private final DutyCycleEncoder hopperEncoder = new DutyCycleEncoder(0);
 
-  private final SparkFlex m_shooterMotor = new SparkFlex(7, MotorType.kBrushless);
+  private final SparkFlex m_intake = new SparkFlex(7, MotorType.kBrushless);
+  private final SparkClosedLoopController m_intakePID = m_intake.getClosedLoopController();
+  private final RelativeEncoder m_intakeEncoder = m_intake.getEncoder();
+
+  private final SparkFlex m_shooterMotor = new SparkFlex(8, MotorType.kBrushless);
   private final SparkClosedLoopController m_shooterPID = m_shooterMotor.getClosedLoopController();
   private final RelativeEncoder m_shooterEncoder = m_shooterMotor.getEncoder();
-
-  private final SparkFlex m_pusher = new SparkFlex(8, MotorType.kBrushless);
-  private final SparkClosedLoopController m_pusherPID = m_pusher.getClosedLoopController();
-  private final RelativeEncoder m_pusherEncoder = m_pusher.getEncoder();
 
   private final SparkMax m_winch_left = new SparkMax(9, MotorType.kBrushless);
   private final SparkClosedLoopController m_winch_leftPID = m_winch_left.getClosedLoopController();
@@ -107,8 +113,8 @@ public class Robot extends TimedRobot {
   private final SparkClosedLoopController m_winch_rightPID = m_winch_right.getClosedLoopController();
   private final RelativeEncoder m_winch_rightEncoder = m_winch_right.getEncoder();
 
-  double currentIntakeVelocity = m_intakeEncoder.getVelocity();
-  double currentIntakeCurrent = m_intakemotor.getOutputCurrent();
+  double currentpusherVelocity = m_pusherEncoder.getVelocity();
+  double currentpusherCurrent = m_pushermotor.getOutputCurrent();
 
   // auto stall detection variables and timer
   double kStallVelocity = 10.0; // RPM
@@ -117,8 +123,8 @@ public class Robot extends TimedRobot {
   private final Timer m_stallTimer = new Timer();
   private final double kStallTimeLimit = 0.5; // seconds to wait before reversing
 
-  int callabrationMode = 0; // 0 = normal, 1 = shooter calibration, 2 = intake calibration, 3 = top load
-                            // calibration, 4 = pusher calibration, 5 = hopper calibration
+  int callabrationMode = 0; // 0 = normal, 1 = shooter calibration, 2 = pusher calibration, 3 = top load
+                            // calibration, 4 = intake calibration, 5 = hopper calibration
 
   @SuppressWarnings("removal")
   public Robot() {
@@ -139,18 +145,15 @@ public class Robot extends TimedRobot {
     m_rightLeader.configure(rightConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
     m_rightFollower.configure(rightFollowerConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
-    // 2. Configure Shooter & Intake & Hopper
+    // 2. Configure Shooter & pusher & Hopper
     SparkMaxConfig hopperConfig = new SparkMaxConfig();
-    hopperConfig.absoluteEncoder.positionConversionFactor(360.0);
-    hopperConfig.absoluteEncoder.zeroOffset(0.0);
-    hopperConfig.closedLoop.feedbackSensor(FeedbackSensor.kAbsoluteEncoder)
-        .p(0.00025).i(0).d(.00001).outputRange(-1, 1);
+    hopperConfig.smartCurrentLimit(30);
     m_hopperMotor.configure(hopperConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
-    SparkFlexConfig pusherConfig = new SparkFlexConfig();
-    pusherConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+    SparkFlexConfig intakeConfig = new SparkFlexConfig();
+    intakeConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
         .p(0.00025).i(0).d(0).outputRange(-1.0, 1.0);
-    m_pusher.configure(pusherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    m_intake.configure(intakeConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     SparkFlexConfig shooterConfig = new SparkFlexConfig();
     shooterConfig.smartCurrentLimit(60);
@@ -158,11 +161,11 @@ public class Robot extends TimedRobot {
         .p(0.00025).i(0).d(0).velocityFF(0.00018).outputRange(-1.0, 1.0);
     m_shooterMotor.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
-    SparkMaxConfig intakeConfig = new SparkMaxConfig();
-    intakeConfig.smartCurrentLimit(40);
-    intakeConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+    SparkMaxConfig pusherConfig = new SparkMaxConfig();
+    pusherConfig.smartCurrentLimit(40);
+    pusherConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
         .p(0.00025).i(0).d(0).outputRange(-1.0, 1.0);
-    m_intakemotor.configure(intakeConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    m_pushermotor.configure(pusherConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     // climber config, same for left and right except for motor ID
 
@@ -213,7 +216,7 @@ public class Robot extends TimedRobot {
     m_robotDrive.arcadeDrive(-m_p2Controller.getLeftY() * -1 * wheel_factor,
         -m_p2Controller.getRightX() * -1 * wheel_factor);
 
-    // callabration mode for shooter and intake
+    // callabration mode for shooter and pusher
 
     if (m_p1Controller.getStartButtonPressed()) {
       callabrationMode = (callabrationMode + 1) % 6; // cycle through modes
@@ -224,19 +227,19 @@ public class Robot extends TimedRobot {
         System.out.println("Normal Mode");
         wheel_factor = 0.8;
         shooter_factor = 1;
-        intake_factor = 1;
+        pusher_factor = 1;
       }
       if (callabrationMode == 1) {
         System.out.println("Shooter Calibration Mode");
       }
       if (callabrationMode == 2) {
-        System.out.println("Intake Calibration Mode");
+        System.out.println("pusher Calibration Mode");
       }
       if (callabrationMode == 3) {
         System.out.println("top load calibration mode");
       }
       if (callabrationMode == 4) {
-        System.out.println("pusher callabration");
+        System.out.println("intake callabration");
       }
       if (callabrationMode == 5) {
         System.out.println("hopper callabration");
@@ -261,12 +264,12 @@ public class Robot extends TimedRobot {
 
     } else if (callabrationMode == 2) {
       if (m_p1Controller.getLeftBumperButtonReleased()) {
-        intakeposition[positionIndex] -= intake_increment;// increment = 100 RPM, can be changed at the top of the code
-        System.out.println("Target intake RPM-: " + intakeposition[positionIndex]);
+        pusherposition[positionIndex] -= pusher_increment;// increment = 100 RPM, can be changed at the top of the code
+        System.out.println("Target pusher RPM-: " + pusherposition[positionIndex]);
       }
       if (m_p1Controller.getRightBumperButtonReleased()) {
-        intakeposition[positionIndex] += intake_increment;// increment = 100 RPM, can be changed at the top of the code
-        System.out.println("Target intake RPM+: " + intakeposition[positionIndex]);
+        pusherposition[positionIndex] += pusher_increment;// increment = 100 RPM, can be changed at the top of the code
+        System.out.println("Target pusher RPM+: " + pusherposition[positionIndex]);
       }
     } else if (callabrationMode == 3) {
       if (m_p1Controller.getLeftBumperButtonReleased()) {
@@ -279,60 +282,62 @@ public class Robot extends TimedRobot {
       }
     } else if (callabrationMode == 4) {
       if (m_p1Controller.getLeftBumperButtonReleased()) {
-        pusherposition[positionIndex] -= pusher_increment;// increment = 100 RPM, can be changed at the top of the code
-        System.out.println("Pusher RPM: " + pusherposition[positionIndex]);
-        System.out.println("Actual Pusher Velocity-: " + m_pusherEncoder.getVelocity());
+        intakeposition[positionIndex] -= intake_increment;// increment = 100 RPM, can be changed at the top of the code
+        System.out.println("intake RPM: " + intakeposition[positionIndex]);
+        System.out.println("Actual intake Velocity-: " + m_intakeEncoder.getVelocity());
       }
       if (m_p1Controller.getRightBumperButtonReleased()) {
-        pusherposition[positionIndex] += pusher_increment;// increment = 100 RPM, can be changed at the top of the code
-        System.out.println("Pusher RPM: " + pusherposition[positionIndex]);
-        System.out.println("Actual Pusher Velocity+: " + m_pusherEncoder.getVelocity());
+        intakeposition[positionIndex] += intake_increment;// increment = 100 RPM, can be changed at the top of the code
+        System.out.println("intake RPM: " + intakeposition[positionIndex]);
+        System.out.println("Actual intake Velocity+: " + m_intakeEncoder.getVelocity());
       }
     } else if (callabrationMode == 5) {
       if (m_p1Controller.getLeftBumperButtonReleased()) {
-        hopper_extend -= hopper_increment;// increment = 5 degrees, can be changed at the top of the code
-        System.out.println("Hopper extend Position: " + hopper_extend);
-        System.out.println("Actual Hopper Position-: " + hopperEncoder.getPosition());
+        hopperExtend -= hopper_increment;
+        double hopperDegrees = hopperEncoder.get() * 360.0;
+        System.out.println("Hopper Angle: " + hopperDegrees);
+        System.out.println("Actual Hopper Position-: " + (hopperEncoder.get() * 360.0));
       }
       if (m_p1Controller.getRightBumperButtonReleased()) {
-        hopper_extend += hopper_increment;// increment = 5 degrees, can be changed at the top of the code
-        System.out.println("Hopper Extend Position: " + hopper_extend);
-        System.out.println("Actual Hopper Position+: " + hopperEncoder.getPosition());
+        hopperExtend += hopper_increment;
+        System.out.println("Actual Hopper Position+: " + (hopperEncoder.get() * 360.0));
+        double hopperDegrees = hopperEncoder.get() * 360.0;
+        System.out.println("Hopper Angle: " + hopperDegrees);
       }
     }
 
-    // Player 1 controls shooting, inake, and no climbing controls yet
+    // Player 1 controls shooting, inake, hopper, and climbing controls
     // --- Cycle shooter preset ---
     if (m_p1Controller.getBackButtonPressed()) {
       positionIndex = (positionIndex + 1) % 4;
       kShooterRPM = shooterposition[positionIndex];
-      kIntakeRPM = intakeposition[positionIndex];
-      kPusherRPM = pusherposition[positionIndex];
+      kpusherRPM = pusherposition[positionIndex];
+      kintakeRPM = intakeposition[positionIndex];
     }
-    // shootor and intake button logic
+    // shootor and pusher button logic
     if (m_p1Controller.getYButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM, ControlType.kVelocity); // shooting
-      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity); // shooting
+      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
 
     } else if (m_p1Controller.getXButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // pickup
-      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kpusherRPM, ControlType.kVelocity); // pickup
+      m_shooterPID.setSetpoint(kTopLoadRPM * -1, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
 
     } else if (m_p1Controller.getAButton()) {
-      m_shooterPID.setSetpoint(kTopLoadRPM, ControlType.kVelocity);// top load into hopper
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_shooterPID.setSetpoint(kTopLoadRPM * -1, ControlType.kVelocity);// top load into hopper
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
 
     } else if (m_p1Controller.getBButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // unjam
-      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM * -1, ControlType.kVelocity);
+      m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity); // unlaod fuel from hopper
+      m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM * -1, ControlType.kVelocity);
     } else {
-      m_intakemotor.stopMotor();// causes it to coast instead of brake, which is better for the shooter and
-                                // intake
+      m_pushermotor.stopMotor();// causes it to coast instead of brake, which is better for the shooter and
+      // pusher
       m_shooterMotor.stopMotor();
-      m_pusher.stopMotor();
+      m_intake.stopMotor();
       m_hopperMotor.stopMotor();
     }
     // climber below
@@ -342,34 +347,83 @@ public class Robot extends TimedRobot {
     // our diamiter is .7500 inches
     // circumfrence 2.36 inches
     if (m_p1Controller.getLeftTriggerAxis() > 0.1) {
+      // left and right winch are set the same, if you use differetn gearings or
+      // spools you can change the target position for each independently.
       m_winch_leftPID.setReference(30, ControlType.kMAXMotionPositionControl);
       m_winch_rightPID.setReference(30, ControlType.kMAXMotionPositionControl);
     } else if (m_p1Controller.getRightTriggerAxis() > 0.1) {
       m_winch_leftPID.setReference(0, ControlType.kMAXMotionPositionControl);
       m_winch_rightPID.setReference(0, ControlType.kMAXMotionPositionControl);
     }
+    // --- Simple hopper control ---
+    // Read current angle (0-360)
+    double hopperAngle = hopperEncoder.get() * 360.0;
 
-    int pov = m_p1Controller.getPOV();// hopper in degrees
-    if (pov >= 280 || pov <= 80) {
-      m_hopperPID.setSetpoint(hopper_retract, ControlType.kPosition);
-    } else if (pov >= 100 && pov <= 260) {
-      m_hopperPID.setSetpoint(hopper_extend, ControlType.kPosition);
+    // Choose target based on D-Pad 0 = up, 90 = right, 180 = down, 270 = left, -1 =
+    // not pressed
+    int pov = m_p1Controller.getPOV();
+    // System.out.println("POV" + pov);
+    // Optional debug
+
+    // Variables for hopper control, will be used in the code below, but can be
+    // changed at the top of the code
+    /*
+     * System.out.println("10" + " DPAD: " + pov
+     * + " HAngle: " + hopperAngle
+     * + " HTarget: " + hopperTarget
+     * + " Output: " + output);
+     */
+    if (pov == 180) {
+      // System.out.println("Extend");
+      hopperTarget = hopperExtend; // lifts hopper up
+    }
+    if (pov == 0) {
+      // System.out.println("Retradcting");
+      hopperTarget = hopperRetract; // lowers hopper down
+    }
+    // System.out.println("target" + hopperTarget);
+
+    // System.out.println("hopperangle" + hopperAngle);
+    // Spin toward target
+    if (hopperAngle < (hopperTarget - 5)) { // deadband in degrees
+      output = kSpeed; // spin clockwise
+    } else if (hopperAngle > (hopperTarget + 5)) { // deadband in degrees
+      output = -kSpeed; // spin counter clockwise
+    } else {
+      output = 0; // stop when close
     }
 
-    // System.out.println("Shooter RPM: " + m_shooterEncoder.getVelocity());
-    // stall detection (sample current values each loop)
-    double currentIntakeVelocity = m_intakeEncoder.getVelocity();
-    double currentIntakeCurrent = m_intakemotor.getOutputCurrent();
-    if (Math.abs(m_intakemotor.getAppliedOutput()) > kMinPower) {
-      if (Math.abs(currentIntakeVelocity) < kStallVelocity && currentIntakeCurrent > kStallCurrent) {
+    // Clamp output just in case
+    output = Math.max(-1, Math.min(1, output));
+
+    // Optional debug
+    // System.out.println("20" + " DPAD: " + pov
+    // + " HAngle: " + hopperAngle
+    // + " HTarget: " + hopperTarget
+    // + " Output: " + output);
+
+    // Set motor
+    // m_hopperMotor.set(output);
+    m_hopperMotor.set(-output); // Forces Clockwise rotation, this is motor speed and direction
+
+    // Optional debug
+    // System.out.println("30" + " DPAD: " + pov
+    // + " HAngle: " + hopperAngle
+    // + " HTarget: " + hopperTarget
+    // + " Output: " + output);
+
+    double currentpusherVelocity = m_pusherEncoder.getVelocity();
+    double currentpusherCurrent = m_pushermotor.getOutputCurrent();
+    if (Math.abs(m_pushermotor.getAppliedOutput()) > kMinPower) {
+      if (Math.abs(currentpusherVelocity) < kStallVelocity && currentpusherCurrent > kStallCurrent) {
         // Start the timer if it's not running
         if (m_stallTimer.get() == 0) {
           m_stallTimer.start();
         }
         // If we've exceeded the time limit, take action
         if (m_stallTimer.get() > kStallTimeLimit) {
-          System.out.println("INTAKE STALLED! Reversing.");
-          m_intakemotor.set(-0.5); // reverse
+          System.out.println("pusher STALLED! Reversing.");
+          m_pushermotor.set(-0.5); // reverse
         }
       } else {
         // Not stalling: Reset the timer
@@ -382,8 +436,8 @@ public class Robot extends TimedRobot {
       m_stallTimer.reset();
     }
     if (m_stallTimer.hasElapsed(0.5)) {
-      System.out.println("INTAKE STALLED FOR 0.5 SECONDS!");
-      m_intakemotor.set(-0.5);
+      System.out.println("pusher STALLED FOR 0.5 SECONDS!");
+      m_pushermotor.set(-0.5); // makes motor reverse to try to clear the jam
     }
   } // end teleopPeriodic()
 
@@ -405,48 +459,48 @@ public class Robot extends TimedRobot {
       positionIndex = (positionIndex + 1) % 4;
     }
     kShooterRPM = shooterposition[positionIndex];
-    kIntakeRPM = intakeposition[positionIndex];
-    kPusherRPM = pusherposition[positionIndex];
+    kpusherRPM = pusherposition[positionIndex];
+    kintakeRPM = intakeposition[positionIndex];
 
-    // --- Shooter & Intake button logic ---
+    // --- Shooter & pusher button logic ---
     if (m_p1Controller.getYButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM, ControlType.kVelocity); // shooting
+      m_pusherPID.setSetpoint(kpusherRPM, ControlType.kVelocity); // shooting
       m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
 
     } else if (m_p1Controller.getXButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // pickup
+      m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity); // pickup
       m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
 
     } else if (m_p1Controller.getAButton()) {
       m_shooterPID.setSetpoint(kShooterRPM, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
     } else if (m_p1Controller.getBButton()) {
-      m_intakePID.setSetpoint(kIntakeRPM * -1, ControlType.kVelocity); // unjam
+      m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity); // unjam
       m_shooterPID.setSetpoint(-5600, ControlType.kVelocity);
-      m_pusherPID.setSetpoint(kPusherRPM * -1, ControlType.kVelocity);
+      m_intakePID.setSetpoint(kintakeRPM * -1, ControlType.kVelocity);
 
     } else {
-      m_intakemotor.stopMotor();
+      m_pushermotor.stopMotor();
       m_shooterMotor.stopMotor();
-      m_pusher.stopMotor();
+      m_intake.stopMotor();
       m_hopperMotor.stopMotor();
     }
 
     int pov = m_p1Controller.getPOV();
     if (pov >= 280 && pov <= 80) {
-      m_hopperPID.setSetpoint(hopper_retract, ControlType.kPosition);
+      m_hopperPID.setSetpoint(hopperRetract, ControlType.kPosition);
     } else if (pov >= 100 && pov <= 260) {
-      m_hopperPID.setSetpoint(hopper_extend, ControlType.kPosition);
+      m_hopperPID.setSetpoint(hopperExtend, ControlType.kPosition);
     }
 
     // will happen on its own
-    if (Math.abs(m_intakemotor.getAppliedOutput()) > kMinPower) {
-      if (Math.abs(currentIntakeVelocity) < kStallVelocity && currentIntakeCurrent > kStallCurrent) {
+    if (Math.abs(m_pushermotor.getAppliedOutput()) > kMinPower) {
+      if (Math.abs(currentpusherVelocity) < kStallVelocity && currentpusherCurrent > kStallCurrent) {
 
-        System.out.println("INTAKE STALLED!");
-        m_intakemotor.set(-0.5); // reverse intake to try to clear the jam
+        System.out.println("pusher STALLED!");
+        m_pushermotor.set(-0.5); // reverse pusher to try to clear the jam
       }
     }
 
