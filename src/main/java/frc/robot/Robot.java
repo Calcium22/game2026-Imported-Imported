@@ -61,10 +61,13 @@ public class Robot extends TimedRobot {
   public static double intake_increment = 100; // RPM increment for calibration
   public static double top_load_increment = 100; // RPM increment for calibration
   public static double hopper_increment = 5; // degree increment for hopper calibration
+  // public static double hopper_increment = 100; // degree increment for hopper
+  // calibration
 
   public static double shooter_factor = 0.1; // used for testing,
   public static double pusher_factor = 0.1; // used for testing,
-  public static double wheel_factor = 0.5;
+  public static double wheel_factor = 1.0;
+
   // hopper position variables, hopper is in degrees
   double hopperRetract = 115; // in degrees
   double hopperExtend = 58; // in degrees
@@ -91,9 +94,12 @@ public class Robot extends TimedRobot {
   private final SparkMax m_pushermotor = new SparkMax(5, MotorType.kBrushless);
   private final SparkClosedLoopController m_pusherPID = m_pushermotor.getClosedLoopController();
   private final RelativeEncoder m_pusherEncoder = m_pushermotor.getEncoder();
+
   // Turret & Shooter & hopper motors
   private final SparkMax m_hopperMotor = new SparkMax(6, MotorType.kBrushed);
+  // private final SparkMax m_hopperMotor = new SparkMax(6, MotorType.kBrushless);
   private final SparkClosedLoopController m_hopperPID = m_hopperMotor.getClosedLoopController();
+
   // Assuming the White wire pigtail is in DIO Port 0
   private final DutyCycleEncoder hopperEncoder = new DutyCycleEncoder(0);
 
@@ -148,9 +154,11 @@ public class Robot extends TimedRobot {
     // 2. Configure Shooter & pusher & Hopper
     SparkMaxConfig hopperConfig = new SparkMaxConfig();
     hopperConfig.smartCurrentLimit(30);
+    hopperConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder);
     m_hopperMotor.configure(hopperConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     SparkFlexConfig intakeConfig = new SparkFlexConfig();
+    intakeConfig.smartCurrentLimit(60);
     intakeConfig.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
         .p(0.00025).i(0).d(0).outputRange(-1.0, 1.0);
     m_intake.configure(intakeConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
@@ -224,8 +232,8 @@ public class Robot extends TimedRobot {
         callabrationMode = 0; // reset to normal mode after hopper calibration
       }
       if (callabrationMode == 0) {
-        System.out.println("Normal Mode");
-        wheel_factor = 0.8;
+        System.out.println("Competition Mode");
+        wheel_factor = 1;
         shooter_factor = 1;
         pusher_factor = 1;
       }
@@ -346,71 +354,29 @@ public class Robot extends TimedRobot {
     // (2.0 * Math.PI) / 16 = 0.3927
     // our diamiter is .7500 inches
     // circumfrence 2.36 inches
-    if (m_p1Controller.getLeftTriggerAxis() > 0.1) {
-      // left and right winch are set the same, if you use differetn gearings or
-      // spools you can change the target position for each independently.
-      m_winch_leftPID.setReference(30, ControlType.kMAXMotionPositionControl);
-      m_winch_rightPID.setReference(30, ControlType.kMAXMotionPositionControl);
-    } else if (m_p1Controller.getRightTriggerAxis() > 0.1) {
-      m_winch_leftPID.setReference(0, ControlType.kMAXMotionPositionControl);
-      m_winch_rightPID.setReference(0, ControlType.kMAXMotionPositionControl);
-    }
-    // --- Simple hopper control ---
-    // Read current angle (0-360)
-    double hopperAngle = hopperEncoder.get() * 360.0;
-
+    /*
+     * if (m_p1Controller.getLeftTriggerAxis() > 0.1) {
+     * // left and right winch are set the same, if you use differetn gearings or
+     * // spools you can change the target position for each independently.
+     * m_winch_leftPID.setReference(30, ControlType.kMAXMotionPositionControl);
+     * m_winch_rightPID.setReference(30, ControlType.kMAXMotionPositionControl);
+     * } else if (m_p1Controller.getRightTriggerAxis() > 0.1) {
+     * m_winch_leftPID.setReference(0, ControlType.kMAXMotionPositionControl);
+     * m_winch_rightPID.setReference(0, ControlType.kMAXMotionPositionControl);
+     * }
+     */
     // Choose target based on D-Pad 0 = up, 90 = right, 180 = down, 270 = left, -1 =
     // not pressed
     int pov = m_p1Controller.getPOV();
-    // System.out.println("POV" + pov);
-    // Optional debug
 
-    // Variables for hopper control, will be used in the code below, but can be
-    // changed at the top of the code
-    /*
-     * System.out.println("10" + " DPAD: " + pov
-     * + " HAngle: " + hopperAngle
-     * + " HTarget: " + hopperTarget
-     * + " Output: " + output);
-     */
     if (pov == 180) {
-      // System.out.println("Extend");
-      hopperTarget = hopperExtend; // lifts hopper up
+      System.out.println("Extend");
+      m_hopperPID.setSetpoint(500, ControlType.kVelocity);
     }
     if (pov == 0) {
-      // System.out.println("Retradcting");
-      hopperTarget = hopperRetract; // lowers hopper down
+      System.out.println("Retracting");
+      m_hopperPID.setSetpoint(-500, ControlType.kVelocity);
     }
-    // System.out.println("target" + hopperTarget);
-
-    // System.out.println("hopperangle" + hopperAngle);
-    // Spin toward target
-    if (hopperAngle < (hopperTarget - 5)) { // deadband in degrees
-      output = kSpeed; // spin clockwise
-    } else if (hopperAngle > (hopperTarget + 5)) { // deadband in degrees
-      output = -kSpeed; // spin counter clockwise
-    } else {
-      output = 0; // stop when close
-    }
-
-    // Clamp output just in case
-    output = Math.max(-1, Math.min(1, output));
-
-    // Optional debug
-    // System.out.println("20" + " DPAD: " + pov
-    // + " HAngle: " + hopperAngle
-    // + " HTarget: " + hopperTarget
-    // + " Output: " + output);
-
-    // Set motor
-    // m_hopperMotor.set(output);
-    m_hopperMotor.set(-output); // Forces Clockwise rotation, this is motor speed and direction
-
-    // Optional debug
-    // System.out.println("30" + " DPAD: " + pov
-    // + " HAngle: " + hopperAngle
-    // + " HTarget: " + hopperTarget
-    // + " Output: " + output);
 
     double currentpusherVelocity = m_pusherEncoder.getVelocity();
     double currentpusherCurrent = m_pushermotor.getOutputCurrent();
@@ -423,7 +389,7 @@ public class Robot extends TimedRobot {
         // If we've exceeded the time limit, take action
         if (m_stallTimer.get() > kStallTimeLimit) {
           System.out.println("pusher STALLED! Reversing.");
-          m_pushermotor.set(-0.5); // reverse
+          m_pusherPID.setSetpoint(-3000, ControlType.kVelocity); // reverse
         }
       } else {
         // Not stalling: Reset the timer
@@ -437,7 +403,7 @@ public class Robot extends TimedRobot {
     }
     if (m_stallTimer.hasElapsed(0.5)) {
       System.out.println("pusher STALLED FOR 0.5 SECONDS!");
-      m_pushermotor.set(-0.5); // makes motor reverse to try to clear the jam
+      m_pusherPID.setSetpoint(-3000, ControlType.kVelocity); // makes motor reverse to try to clear the jam
     }
   } // end teleopPeriodic()
 
@@ -450,8 +416,8 @@ public class Robot extends TimedRobot {
   public void testPeriodic() {
     // --- Drive ---
     m_robotDrive.arcadeDrive(
-        -m_p1Controller.getLeftY() * 0.5,
-        -m_p1Controller.getRightX() * 0.5);
+        -m_p1Controller.getLeftY() * 1.0,
+        -m_p1Controller.getRightX() * 1.0);
 
     // Player 1 controls shooting, climbing
     // cycle shooter preset
