@@ -85,7 +85,7 @@ public class Robot extends TimedRobot {
   double inchesPerMotorRotation = 0.3927; // (inch diameter * Math.PI) / 16
 
   private final Timer autotimer = new Timer();
-
+  private final Timer spin_up = new Timer();
   // Drivetrain Motors
   private final SparkMax m_leftLeader = new SparkMax(1, MotorType.kBrushed);
   private final SparkMax m_leftFollower = new SparkMax(2, MotorType.kBrushed);
@@ -96,8 +96,6 @@ public class Robot extends TimedRobot {
 
   private final XboxController m_p1Controller = new XboxController(0);
   private final XboxController m_p2Controller = new XboxController(1);
-
-  private final Timer m_timer = new Timer();
 
   private final SparkMax m_pushermotor = new SparkMax(5, MotorType.kBrushless);
   private final SparkClosedLoopController m_pusherPID = m_pushermotor.getClosedLoopController();
@@ -118,14 +116,6 @@ public class Robot extends TimedRobot {
   private final SparkFlex m_shooterMotor = new SparkFlex(8, MotorType.kBrushless);
   private final SparkClosedLoopController m_shooterPID = m_shooterMotor.getClosedLoopController();
   private final RelativeEncoder m_shooterEncoder = m_shooterMotor.getEncoder();
-
-  private final SparkMax m_winch_left = new SparkMax(9, MotorType.kBrushless);
-  private final SparkClosedLoopController m_winch_leftPID = m_winch_left.getClosedLoopController();
-  private final RelativeEncoder m_winch_leftEncoder = m_winch_left.getEncoder();
-
-  private final SparkMax m_winch_right = new SparkMax(10, MotorType.kBrushless);
-  private final SparkClosedLoopController m_winch_rightPID = m_winch_right.getClosedLoopController();
-  private final RelativeEncoder m_winch_rightEncoder = m_winch_right.getEncoder();
 
   double currentpusherVelocity = m_pusherEncoder.getVelocity();
   double currentpusherCurrent = m_pushermotor.getOutputCurrent();
@@ -186,30 +176,33 @@ public class Robot extends TimedRobot {
 
     // climber config, same for left and right except for motor ID
 
-    SparkMaxConfig winchleft_Config = new SparkMaxConfig();
-    winchleft_Config.smartCurrentLimit(30);
-    winchleft_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-        .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
-    winchleft_Config.encoder
-        .positionConversionFactor(inchesPerMotorRotation);
-    winchleft_Config.closedLoop.maxMotion
-        .cruiseVelocity(400) // Replaces maxVelocity
-        .maxAcceleration(200) // Replaces maxAcceleration
-        .allowedClosedLoopError(1);
-    m_winch_left.configure(winchleft_Config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-    SparkMaxConfig winchright_Config = new SparkMaxConfig();
-    winchright_Config.smartCurrentLimit(30);
-    winchright_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-        .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
-    winchright_Config.encoder
-        .positionConversionFactor(inchesPerMotorRotation);
-    winchright_Config.closedLoop.maxMotion
-        .cruiseVelocity(400)
-        .maxAcceleration(200)
-        .allowedClosedLoopError(1);
-    m_winch_right.configure(winchright_Config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-    // Configure closed-loop motion parameters for both winch configs
-
+    /*
+     * SparkMaxConfig winchleft_Config = new SparkMaxConfig();
+     * winchleft_Config.smartCurrentLimit(30);
+     * winchleft_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+     * .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
+     * winchleft_Config.encoder
+     * .positionConversionFactor(inchesPerMotorRotation);
+     * winchleft_Config.closedLoop.maxMotion
+     * .cruiseVelocity(400) // Replaces maxVelocity
+     * .maxAcceleration(200) // Replaces maxAcceleration
+     * .allowedClosedLoopError(1);
+     * m_winch_left.configure(winchleft_Config, ResetMode.kResetSafeParameters,
+     * PersistMode.kPersistParameters);
+     * SparkMaxConfig winchright_Config = new SparkMaxConfig();
+     * winchright_Config.smartCurrentLimit(30);
+     * winchright_Config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+     * .p(0.1).i(0).d(0).outputRange(-1.0, 1.0);
+     * winchright_Config.encoder
+     * .positionConversionFactor(inchesPerMotorRotation);
+     * winchright_Config.closedLoop.maxMotion
+     * .cruiseVelocity(400)
+     * .maxAcceleration(200)
+     * .allowedClosedLoopError(1);
+     * m_winch_right.configure(winchright_Config, ResetMode.kResetSafeParameters,
+     * PersistMode.kPersistParameters);
+     * // Configure closed-loop motion parameters for both winch configs
+     */
   }
 
   @Override
@@ -221,20 +214,58 @@ public class Robot extends TimedRobot {
   public void autonomousPeriodic() {
     autotimer.start();
     // Drive forward at half speed for 2 seconds, then stop
-    if (autotimer.get() < 1.75) {
+    if (autotimer.get() < 1.75)
+
+    {
       m_robotDrive.arcadeDrive(-0.5, 0.0);
     } else {
-      m_robotDrive.stopMotor();
       m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity);
-      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
       m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
     }
-    if (autotimer.get() > 10) {
-      m_robotDrive.stopMotor();
-      m_pushermotor.stopMotor();
-      m_shooterMotor.stopMotor();
-      m_intake.stopMotor();
+    if (autotimer.get() < 10) {
+      m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
     }
+    // Drive forward at half speed for 1.75 seconds, then stop
+    /*
+     * if (autotimer.get() < 1.75) {
+     * m_robotDrive.arcadeDrive(-0.5, 0.0);
+     * }
+     * if (autotimer.get() >= 1.75 && autotimer.get() < 10.0) {
+     * m_pusherPID.setSetpoint(kpusherRPM * -1, ControlType.kVelocity);
+     * m_intakePID.setSetpoint(kintakeRPM, ControlType.kVelocity);
+     * }
+     * if (autotimer.get() < 10) {
+     * m_shooterPID.setSetpoint(kShooterRPM * -1, ControlType.kVelocity);
+     * }
+     * if (autotimer.get() > 10 && autotimer.get() < 11.5) {
+     * m_robotDrive.arcadeDrive(0, -.6);
+     * m_shooterMotor.stopMotor();
+     * }
+     * if (autotimer.get() > 11.5 && autotimer.get() < 13.25) {
+     * m_robotDrive.arcadeDrive(-.5, 0);
+     * }
+     * if (autotimer.get() > 13.25 && autotimer.get() < 14.75) {
+     * m_robotDrive.arcadeDrive(0, -.6);
+     * }
+     * if (autotimer.get() > 14.75 && autotimer.get() < 17.25) {
+     * m_robotDrive.arcadeDrive(-1, 0);
+     * }
+     * if (autotimer.get() >= 17.25 && autotimer.get() < 0.0) {
+     * }
+     */
+    // comment about what the code does
+    // if (autotimer.get() >= 0.00 && autotimer.get() < 0.0) {
+    // //what action needs to happen;
+    // }
+
+    /*
+     * if (autotimer.get() > 10) {
+     * m_robotDrive.stopMotor();
+     * m_pushermotor.stopMotor();
+     * m_shooterMotor.stopMotor();
+     * m_intake.stopMotor();
+     * }
+     */
   }
 
   @Override
@@ -397,13 +428,12 @@ public class Robot extends TimedRobot {
      */
     // Choose target based on D-Pad 0 = up, 90 = right, 180 = down, 270 = left, -1 =
     // not pressed
-    int pov = m_p1Controller.getPOV();
 
-    if (pov == 180) {
+    if (m_p1Controller.getAButton()) {
       System.out.println("Extend");
       m_hopperPID.setSetpoint(500, ControlType.kVelocity);
     }
-    if (pov == 0) {
+    if (m_p1Controller.getYButton()) {
       System.out.println("Retracting");
       m_hopperPID.setSetpoint(-500, ControlType.kVelocity);
     }
